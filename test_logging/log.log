@@ -1,0 +1,3 @@
+2024-07-15 11:35:12,547 - __main__ - INFO - Log message with debug level
+2024-07-15 11:35:12,557 - __main__ - INFO - Log message with custom filter
+2024-07-15 11:35:12,559 - __main__ - INFO - Log message after removing custom filter
