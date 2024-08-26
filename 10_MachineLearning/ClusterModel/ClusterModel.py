@@ -1,12 +1,15 @@
 import numpy as np
-
 from knee_locator import KneeLocator
 from sklearn.preprocessing import normalize
-from sklearn.cluster import DBSCAN
-from sklearn.metrics import silhouette_score
-from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import KMeans
+from sklearn.cluster import DBSCAN
+from sklearn.mixture import GaussianMixture
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.neighbors import NearestNeighbors
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.metrics import silhouette_score
 import matplotlib.pyplot as plt
+from scipy.cluster.hierarchy import linkage, dendrogram
 
 
 class DataPreprocessTypeError(Exception):
@@ -106,14 +109,90 @@ class ClusterModel():
         kmeans.fit(self.data)
         return kmeans.inertia_
     
-    def Hierachical(self):
-        pass
+    def Hierachical(self,X):
+        best_params = self.Hierachical_optimize(X)
+        self.H_metric = best_params['metric']
+        self.H_method = best_params['linkage']
+        model = AgglomerativeClustering(affinity=self.H_metric, linkage=self.H_method)
+        labels = model.fit_predict(X)
+        return labels
     
-    def Hierachical_optimize(self,):
-        pass
+    def Hierachical_optimize(self,X):
+        distance_metrics = ['euclidean', 'manhattan', 'cosine']
+        linkage_methods = ['single', 'complete', 'average', 'ward']
+        best_score = -1
+        best_params = {}
+        for metric in distance_metrics:
+            for method in linkage_methods:
+                if method == 'ward' and metric != 'euclidean':
+                    continue
+                model = AgglomerativeClustering(affinity=metric, linkage=method)
+                labels = model.fit_predict(X)
+                score = silhouette_score(X, labels, metric=metric)
+                if score > best_score:
+                    best_score = score
+                    best_params = {'metric': metric, 'linkage': method}
+        return best_params
     
-    def DNSCAN(self):
-        pass
+    def Hierachical_display(self,X):
+        Z = linkage(X, method=self.H_method, metric=self.H_metric)
+        plt.figure(figsize=(10, 7))
+        dendrogram(Z)
+        plt.show()
     
-    def DBSCAN_optimize(self):
-        pass
+    def DBSCAN(self,X):
+        db = DBSCAN(eps=0.3, min_samples=5)
+        labels = db.fit_predict(X)
+        core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
+        core_samples_mask[db.core_sample_indices_] = True
+        n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+
+    def DBSCAN_optimize(self,X,
+                        eps_values= np.arange(0.1, 1.0, 0.1),
+                        min_samples_values = range(3, 10)):
+        best_score = -1
+        best_params = {}
+        for eps in eps_values:
+            for min_samples in min_samples_values:
+                db = DBSCAN(eps=eps, min_samples=min_samples)
+                labels = db.fit_predict(X)
+                if len(set(labels)) > 1:
+                    score = silhouette_score(X, labels)
+                    print(f'EPS: {eps}, Min_samples: {min_samples}, Silhouette Score: {score:.4f}')
+                    if score > best_score:
+                        best_score = score
+                        best_params = {'eps': eps, 'min_samples': min_samples}
+        return best_params
+    
+    def DBSCAN_display(self,X,labels,core_samples_mask,n_clusters_):
+        plt.figure(figsize=(8, 6))
+        unique_labels = set(labels)
+        colors = [plt.cm.Spectral(each) for each in np.linspace(0, 1, len(unique_labels))]
+        for k, col in zip(unique_labels, colors):
+            if k == -1:
+                col = [0, 0, 0, 1]
+            class_member_mask = (labels == k)
+            xy = X[class_member_mask & core_samples_mask]
+            plt.plot(xy[:, 0], xy[:, 1], 'o', markerfacecolor=tuple(col),
+                     markeredgecolor='k', markersize=14)
+            xy = X[class_member_mask & ~core_samples_mask]
+            plt.plot(xy[:, 0], xy[:, 1], 'o', markerfacecolor=tuple(col),
+                     markeredgecolor='k', markersize=6)
+        plt.title('Estimated number of clusters: %d' % n_clusters_)
+        plt.show()
+    
+    def GMM_model(self,X):
+        gmm = GaussianMixture(n_components=4, covariance_type='full', random_state=42)
+        gmm.fit(X)
+        labels = gmm.predict(X)
+    
+    def GMM_optimize(self,X,n_components=range(1, 10)):
+        param_dist = {
+            'n_components': n_components,
+            'covariance_type': ['full', 'tied', 'diag', 'spherical']
+        }
+        random_search = RandomizedSearchCV(estimator=GaussianMixture(random_state=42),
+                                        param_distributions=param_dist,
+                                        n_iter=20, scoring='neg_bic', cv=5, random_state=42)
+        random_search.fit(X)
+        return random_search.best_params_
